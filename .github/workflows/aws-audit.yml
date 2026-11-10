@@ -32,7 +32,7 @@ jobs:
           aws-region: us-east-1 # Cambia esto si usas otra región
 
       - name: Run CSPM Auditor
-        run: python cspm_auditor.py
+        run: python main.py
 
       - name: Upload Security Reports
         uses: actions/upload-artifact@v4
