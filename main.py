@@ -102,12 +102,18 @@ def write_pdf_report(findings: Sequence[dict[str, str]], output_dir: Path, times
     pdf.ln(5)
 
     for index, finding in enumerate(findings, 1):
+        if finding["Riesgo"] == "Crítico":
+            pdf.set_text_color(220, 53, 69)
+        elif finding["Riesgo"] == "Alto":
+            pdf.set_text_color(253, 126, 20)
+
         pdf.set_font("helvetica", "B", 12)
         title = (
             f"{index}. [{finding['Riesgo']}] "
             f"{finding['Servicio']} - {finding['Recurso']}"
         )
         pdf.cell(0, 8, _pdf_safe_text(title), new_x="LMARGIN", new_y="NEXT")
+        pdf.set_text_color(0, 0, 0)
         pdf.set_font("helvetica", "", 11)
         pdf.multi_cell(0, 6, _pdf_safe_text(f"Detalle: {finding['Descripción']}"))
         pdf.ln(4)

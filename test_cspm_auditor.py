@@ -96,3 +96,19 @@ def test_check_public_s3_buckets_detects_unrestricted_bucket(mock_boto_client):
         }
     ]
     mock_boto_client.assert_any_call("s3")
+
+
+@patch("boto3.client")
+def test_audits_without_vulnerabilities_return_empty_findings(mock_boto_client):
+    """Devuelve una lista vacía cuando AWS no presenta configuraciones inseguras."""
+    aws_client = mock_boto_client.return_value
+    aws_client.list_users.return_value = {"Users": []}
+    aws_client.describe_security_groups.return_value = {"SecurityGroups": []}
+    aws_client.list_buckets.return_value = {"Buckets": []}
+
+    auditor = CloudSecurityAuditor()
+    auditor.check_iam_mfa()
+    auditor.check_open_ssh()
+    auditor.check_public_s3_buckets()
+
+    assert auditor.findings == []

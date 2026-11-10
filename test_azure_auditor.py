@@ -64,3 +64,22 @@ def test_check_public_storage_accounts_detects_public_account(
 
     assert findings[0]["Riesgo"] == "Crítico"
     assert findings[0]["Servicio"] == "Azure Blob"
+
+
+@patch("azure_auditor.DefaultAzureCredential")
+@patch("azure_auditor.BlobServiceClient")
+def test_audits_without_vulnerabilities_return_empty_findings(
+    mock_blob_service_client,
+    mock_default_credential,
+):
+    """Devuelve una lista vacía cuando Azure no presenta acceso público."""
+    mock_default_credential.return_value = "mock-credential"
+    blob_service_client = mock_blob_service_client.return_value
+    blob_service_client.get_service_properties.return_value = {
+        "allow_blob_public_access": False
+    }
+    blob_service_client.list_containers.return_value = []
+
+    auditor = AzureSecurityAuditor("https://storage.blob.core.windows.net")
+
+    assert auditor.run() == []

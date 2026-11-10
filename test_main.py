@@ -78,3 +78,32 @@ def test_main_min_severity_flag_filters_findings(tmp_path):
 
     report_findings = write_csv_report.call_args.args[0]
     assert report_findings == [findings[0]]
+
+
+def test_write_pdf_report_applies_severity_colors(tmp_path):
+    """Usa rojo para Crítico, naranja para Alto y negro en las descripciones."""
+    findings = [
+        {
+            "Servicio": "AWS",
+            "Recurso": "critical",
+            "Riesgo": "Crítico",
+            "Descripción": "critical finding",
+        },
+        {
+            "Servicio": "Azure Blob",
+            "Recurso": "high",
+            "Riesgo": "Alto",
+            "Descripción": "high finding",
+        },
+    ]
+
+    with patch("main.FPDF") as pdf_class:
+        pdf = pdf_class.return_value
+        main.write_pdf_report(findings, tmp_path, "20261110_000000")
+
+    assert pdf.set_text_color.call_args_list == [
+        ((220, 53, 69),),
+        ((0, 0, 0),),
+        ((253, 126, 20),),
+        ((0, 0, 0),),
+    ]
