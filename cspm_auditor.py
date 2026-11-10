@@ -2,6 +2,7 @@ import boto3
 import csv
 from datetime import datetime
 from botocore.exceptions import ClientError
+from fpdf import FPDF
 
 class CloudSecurityAuditor:
     def __init__(self):
@@ -102,10 +103,51 @@ class CloudSecurityAuditor:
         print(f"[+] Auditoría completada. Se encontraron {len(self.findings)} vulnerabilidades.")
         print(f"[+] Reporte generado exitosamente: {filename}")
 
+    def generate_pdf_report(self):
+        """Genera un reporte PDF elegante con los hallazgos de seguridad."""
+        if not self.findings:
+            return # No hay vulnerabilidades
+
+        pdf = FPDF()
+        pdf.add_page()
+        
+        # Título
+        pdf.set_font("helvetica", "B", 16)
+        pdf.cell(0, 10, "Auditoría de Seguridad AWS (CSPM Ligero)", ln=True, align="C")
+        pdf.ln(5)
+        
+        # Fecha
+        pdf.set_font("helvetica", "I", 10)
+        timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        pdf.cell(0, 10, f"Fecha de generación: {timestamp_str}", ln=True, align="R")
+        pdf.ln(5)
+
+        # Iterar sobre los hallazgos
+        for idx, finding in enumerate(self.findings, 1):
+            # Asignar color según el riesgo (Rojo para Crítico, Naranja para Alto)
+            if finding['Riesgo'] == 'Crítico':
+                pdf.set_text_color(220, 53, 69) # Rojo
+            else:
+                pdf.set_text_color(253, 126, 20) # Naranja oscuro
+                
+            pdf.set_font("helvetica", "B", 12)
+            pdf.cell(0, 8, f"{idx}. [{finding['Riesgo']}] {finding['Servicio']} - {finding['Recurso']}", ln=True)
+            
+            pdf.set_text_color(0, 0, 0) # Negro para la descripción
+            pdf.set_font("helvetica", "", 11)
+            pdf.multi_cell(0, 6, txt=f"Detalle: {finding['Descripción']}")
+            pdf.ln(4)
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"reporte_seguridad_{timestamp}.pdf"
+        pdf.output(filename)
+        print(f"[+] Reporte PDF generado exitosamente: {filename}")
+
     def run(self):
         self.check_iam_mfa()
         self.check_open_ssh()
         self.check_public_s3_buckets()
+        self.generate_pdf_report()
         self.generate_csv_report()
 
 if __name__ == "__main__":
