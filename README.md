@@ -26,7 +26,7 @@ pip install -r requirements.txt
 python main.py
 
 # Escanear Azure filtrando solo hallazgos de severidad Crítica y exportando a PDF
-AZURE_STORAGE_ACCOUNT_URL="[https://mi-cuenta.blob.core.windows.net](https://mi-cuenta.blob.core.windows.net)" python main.py --provider azure --min-severity Crítico --format pdf
+AZURE_STORAGE_ACCOUNT_URL="https://mi-cuenta.blob.core.windows.net" python main.py --provider azure --min-severity Crítico --format pdf
 
 # Escanear AWS y Azure consolidando reportes en una carpeta específica
 python main.py --provider all --output-dir ./reportes
