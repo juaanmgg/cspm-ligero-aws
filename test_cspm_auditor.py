@@ -1,6 +1,6 @@
 from unittest.mock import patch
 
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, NoCredentialsError
 
 from cspm_auditor import CloudSecurityAuditor
 
@@ -125,3 +125,40 @@ def test_cloud_security_auditor_uses_configured_aws_region(mock_boto_client):
         (("ec2",), {"region_name": "eu-west-1"}),
         (("s3",), {"region_name": "eu-west-1"}),
     ]
+
+
+@patch("boto3.client")
+def test_check_iam_mfa_handles_missing_aws_credentials(mock_boto_client, capsys):
+    """Muestra el error de credenciales y no interrumpe la auditoría IAM."""
+    mock_boto_client.return_value.list_users.side_effect = NoCredentialsError()
+
+    auditor = CloudSecurityAuditor()
+    auditor.check_iam_mfa()
+
+    assert "[!] Error: No se encontraron credenciales de AWS." in capsys.readouterr().out
+
+
+@patch("boto3.client")
+def test_check_open_ssh_handles_missing_aws_credentials(mock_boto_client, capsys):
+    """Muestra el error de credenciales y no interrumpe la auditoría EC2."""
+    mock_boto_client.return_value.describe_security_groups.side_effect = (
+        NoCredentialsError()
+    )
+
+    auditor = CloudSecurityAuditor()
+    auditor.check_open_ssh()
+
+    assert "[!] Error: No se encontraron credenciales de AWS." in capsys.readouterr().out
+
+
+@patch("boto3.client")
+def test_check_public_s3_buckets_handles_missing_aws_credentials(
+    mock_boto_client, capsys
+):
+    """Muestra el error de credenciales y no interrumpe la auditoría S3."""
+    mock_boto_client.return_value.list_buckets.side_effect = NoCredentialsError()
+
+    auditor = CloudSecurityAuditor()
+    auditor.check_public_s3_buckets()
+
+    assert "[!] Error: No se encontraron credenciales de AWS." in capsys.readouterr().out

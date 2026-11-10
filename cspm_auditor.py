@@ -2,7 +2,7 @@ import boto3
 import csv
 import os
 from datetime import datetime
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, NoCredentialsError
 from fpdf import FPDF
 
 class CloudSecurityAuditor:
@@ -30,6 +30,8 @@ class CloudSecurityAuditor:
                         'Riesgo': 'Alto',
                         'Descripción': 'El usuario no tiene Autenticación Multifactor (MFA) habilitada.'
                     })
+        except NoCredentialsError:
+            print("[!] Error: No se encontraron credenciales de AWS. Configura tus claves mediante 'aws configure' o variables de entorno.")
         except ClientError as e:
             print(f"[!] Error leyendo IAM: {e}")
 
@@ -53,6 +55,8 @@ class CloudSecurityAuditor:
                                     'Riesgo': 'Crítico',
                                     'Descripción': 'El puerto 22 (SSH) está expuesto a todo Internet (0.0.0.0/0).'
                                 })
+        except NoCredentialsError:
+            print("[!] Error: No se encontraron credenciales de AWS. Configura tus claves mediante 'aws configure' o variables de entorno.")
         except ClientError as e:
             print(f"[!] Error leyendo EC2: {e}")
 
@@ -74,6 +78,8 @@ class CloudSecurityAuditor:
                             'Riesgo': 'Alto',
                             'Descripción': 'El bucket no tiene bloqueado el acceso público en todas sus políticas.'
                         })
+                except NoCredentialsError:
+                    print("[!] Error: No se encontraron credenciales de AWS. Configura tus claves mediante 'aws configure' o variables de entorno.")
                 except ClientError as e:
                     if e.response['Error']['Code'] == 'NoSuchPublicAccessBlockConfiguration':
                         self.findings.append({
@@ -82,6 +88,8 @@ class CloudSecurityAuditor:
                             'Riesgo': 'Crítico',
                             'Descripción': 'El bucket NO tiene configurado ningún bloque de acceso público.'
                         })
+        except NoCredentialsError:
+            print("[!] Error: No se encontraron credenciales de AWS. Configura tus claves mediante 'aws configure' o variables de entorno.")
         except ClientError as e:
             print(f"[!] Error leyendo S3: {e}")
 
