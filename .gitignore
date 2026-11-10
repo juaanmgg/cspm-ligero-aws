@@ -1,0 +1,6 @@
+venv/
+__pycache__/
+*.pyc
+reporte_seguridad_*.csv
+reporte_seguridad_*.pdf
+.env
