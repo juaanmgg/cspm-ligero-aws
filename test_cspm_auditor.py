@@ -27,7 +27,7 @@ def test_check_iam_mfa_detects_missing_mfa(mock_boto_client):
             ),
         }
     ]
-    mock_boto_client.assert_any_call("iam")
+    mock_boto_client.assert_any_call("iam", region_name="us-east-1")
 
 
 @patch("boto3.client")
@@ -64,7 +64,7 @@ def test_check_open_ssh_detects_public_port_22(mock_boto_client):
             ),
         }
     ]
-    mock_boto_client.assert_any_call("ec2")
+    mock_boto_client.assert_any_call("ec2", region_name="us-east-1")
 
 
 @patch("boto3.client")
@@ -95,7 +95,7 @@ def test_check_public_s3_buckets_detects_unrestricted_bucket(mock_boto_client):
             ),
         }
     ]
-    mock_boto_client.assert_any_call("s3")
+    mock_boto_client.assert_any_call("s3", region_name="us-east-1")
 
 
 @patch("boto3.client")
@@ -112,3 +112,16 @@ def test_audits_without_vulnerabilities_return_empty_findings(mock_boto_client):
     auditor.check_public_s3_buckets()
 
     assert auditor.findings == []
+
+
+@patch.dict("os.environ", {"AWS_DEFAULT_REGION": "eu-west-1"})
+@patch("boto3.client")
+def test_cloud_security_auditor_uses_configured_aws_region(mock_boto_client):
+    """Usa la región AWS definida en AWS_DEFAULT_REGION para cada cliente."""
+    CloudSecurityAuditor()
+
+    assert mock_boto_client.call_args_list == [
+        (("iam",), {"region_name": "eu-west-1"}),
+        (("ec2",), {"region_name": "eu-west-1"}),
+        (("s3",), {"region_name": "eu-west-1"}),
+    ]

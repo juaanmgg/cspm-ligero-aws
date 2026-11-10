@@ -46,3 +46,17 @@ python main.py --provider all --output-dir ./reportes
 ```bash
 pytest -v
 ```
+
+## 🐳 Ejecución con Docker
+
+Construye la imagen desde la raíz del proyecto:
+
+```bash
+docker build -t cspm-ligero-aws .
+```
+
+Ejecuta la auditoría pasando argumentos de la CLI al contenedor:
+
+```bash
+docker run --rm cspm-ligero-aws --provider aws --format both --output-dir /app/reportes
+```

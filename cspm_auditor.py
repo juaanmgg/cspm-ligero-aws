@@ -1,5 +1,6 @@
 import boto3
 import csv
+import os
 from datetime import datetime
 from botocore.exceptions import ClientError
 from fpdf import FPDF
@@ -7,9 +8,10 @@ from fpdf import FPDF
 class CloudSecurityAuditor:
     def __init__(self):
         # Inicializa los clientes de AWS
-        self.iam_client = boto3.client('iam')
-        self.ec2_client = boto3.client('ec2')
-        self.s3_client = boto3.client('s3')
+        region_name = os.getenv('AWS_DEFAULT_REGION', 'us-east-1')
+        self.iam_client = boto3.client('iam', region_name=region_name)
+        self.ec2_client = boto3.client('ec2', region_name=region_name)
+        self.s3_client = boto3.client('s3', region_name=region_name)
         self.findings = []
 
     def check_iam_mfa(self):
