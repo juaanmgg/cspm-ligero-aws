@@ -4,6 +4,7 @@ fonttools==4.68.0
 fpdf2==2.9.0
 jmespath==1.1.0
 pillow==13.0.0
+pytest==9.2.0
 python-dateutil==2.9.0.post0
 s3transfer==0.19.3
 six==1.17.0
