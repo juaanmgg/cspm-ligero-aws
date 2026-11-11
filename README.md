@@ -1,4 +1,4 @@
-# 🛡️ Multi-Cloud Lightweight CSPM (Cloud Security Posture Management)
+# Multi-Cloud Lightweight CSPM (Cloud Security Posture Management)
 
 Una herramienta CLI de auditoría de seguridad automatizada diseñada para identificar malas configuraciones en entornos **AWS** y **Azure**. Ideal para integraciones en pipelines de DevSecOps y revisiones continuas de infraestructura.
 
