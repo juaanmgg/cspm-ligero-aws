@@ -1,20 +1,28 @@
+<div align="center">
+
 # Multi-Cloud Lightweight CSPM (Cloud Security Posture Management)
+
+</div>
+
+---
 
 Una herramienta CLI de auditoría de seguridad automatizada diseñada para identificar malas configuraciones en entornos **AWS** y **Azure**. Ideal para integraciones en pipelines de DevSecOps y revisiones continuas de infraestructura.
 
 ## 🎯 Características Principales
-* **AWS Audit:**
-  * Identificación de usuarios IAM sin Autenticación Multifactor (MFA).
-  * Detección de Security Groups con el puerto 22 (SSH) abierto a `0.0.0.0/0`.
-  * Verificación de bloqueos de acceso público en Buckets S3.
-* **Azure Audit:**
-  * Detección de cuentas de almacenamiento y contenedores Blob con acceso anónimo habilitado.
-* **CLI Avanzada:** Filtrado por proveedor, nivel de severidad y múltiples formatos de exportación (CSV / PDF).
-* **CI/CD Integrado:** Pruebas unitarias automáticas con `pytest` y ejecución programada semanal con GitHub Actions.
+
+- **AWS Audit:**
+  - Identificación de usuarios IAM sin Autenticación Multifactor (MFA).
+  - Detección de Security Groups con el puerto 22 (SSH) abierto a `0.0.0.0/0`.
+  - Verificación de bloqueos de acceso público en Buckets S3.
+- **Azure Audit:**
+  - Detección de cuentas de almacenamiento y contenedores Blob con acceso anónimo habilitado.
+- **CLI Avanzada:** Filtrado por proveedor, nivel de severidad y múltiples formatos de exportación (CSV / PDF).
+- **CI/CD Integrado:** Pruebas unitarias automáticas con `pytest` y ejecución programada semanal con GitHub Actions.
 
 ## 🚀 Requisitos Previos
-* Python 3.10+
-* Credenciales de AWS (`aws configure`) y/o credenciales de Azure (`az login` o variables de entorno).
+
+- Python 3.10+
+- Credenciales de AWS (`aws configure`) y/o credenciales de Azure (`az login` o variables de entorno).
 
 ## 🛠️ Uso de la CLI
 
