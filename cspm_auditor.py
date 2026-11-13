@@ -60,7 +60,9 @@ class AWSSecurityAuditor(BaseAuditor):
                 os.getenv("AWS_DEFAULT_REGION", "us-east-1"),
             ).get_caller_identity()
         except NoCredentialsError as error:
-            raise AuthenticationError("No se encontraron credenciales de AWS.") from error
+            raise AuthenticationError(
+                "No se encontraron credenciales de AWS."
+            ) from error
         except ClientError as error:
             raise AuthenticationError(
                 f"No se pudieron validar las credenciales de AWS: {error}"
@@ -77,7 +79,9 @@ class AWSSecurityAuditor(BaseAuditor):
                     if finding is not None:
                         yield finding
         except NoCredentialsError as error:
-            raise AuthenticationError("No se encontraron credenciales de AWS.") from error
+            raise AuthenticationError(
+                "No se encontraron credenciales de AWS."
+            ) from error
         except ClientError as error:
             raise ResourceAccessError(f"Error leyendo IAM: {error}") from error
 
@@ -132,7 +136,9 @@ class AWSSecurityAuditor(BaseAuditor):
                             "Restringe el puerto 22 a redes de administración conocidas.",
                         )
         except NoCredentialsError as error:
-            raise AuthenticationError("No se encontraron credenciales de AWS.") from error
+            raise AuthenticationError(
+                "No se encontraron credenciales de AWS."
+            ) from error
         except ClientError as error:
             raise ResourceAccessError(f"Error leyendo EC2: {error}") from error
 
@@ -147,16 +153,18 @@ class AWSSecurityAuditor(BaseAuditor):
                     if finding is not None:
                         yield finding
         except NoCredentialsError as error:
-            raise AuthenticationError("No se encontraron credenciales de AWS.") from error
+            raise AuthenticationError(
+                "No se encontraron credenciales de AWS."
+            ) from error
         except ClientError as error:
             raise ResourceAccessError(f"Error leyendo S3: {error}") from error
 
     def _check_bucket_public_access(self, bucket: dict[str, Any]) -> Finding | None:
         bucket_name = bucket["Name"]
         try:
-            config = self.s3_client.get_public_access_block(
-                Bucket=bucket_name
-            )["PublicAccessBlockConfiguration"]
+            config = self.s3_client.get_public_access_block(Bucket=bucket_name)[
+                "PublicAccessBlockConfiguration"
+            ]
             if all(config.values()):
                 return None
             return self._finding(
@@ -169,9 +177,14 @@ class AWSSecurityAuditor(BaseAuditor):
                 "Activa todas las opciones de bloqueo de acceso público del bucket.",
             )
         except NoCredentialsError as error:
-            raise AuthenticationError("No se encontraron credenciales de AWS.") from error
+            raise AuthenticationError(
+                "No se encontraron credenciales de AWS."
+            ) from error
         except ClientError as error:
-            if error.response["Error"]["Code"] == "NoSuchPublicAccessBlockConfiguration":
+            if (
+                error.response["Error"]["Code"]
+                == "NoSuchPublicAccessBlockConfiguration"
+            ):
                 return self._finding(
                     "public-s3",
                     bucket_name,

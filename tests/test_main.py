@@ -44,9 +44,7 @@ def test_main_dispatches_only_csv_report(tmp_path):
         patch("main.collect_findings", return_value=[make_finding()]),
         patch("main.generate_reports") as generate_reports,
     ):
-        assert main.main(
-            ["--format", "csv", "--output-dir", str(tmp_path)]
-        ) == 0
+        assert main.main(["--format", "csv", "--output-dir", str(tmp_path)]) == 0
 
     generate_reports.assert_called_once()
     assert generate_reports.call_args.args[1] == "csv"
@@ -66,16 +64,19 @@ def test_fail_on_severity_returns_one_when_threshold_is_reached(tmp_path):
         patch("main.collect_findings", return_value=[make_finding(Severity.CRITICAL)]),
         patch("main.generate_reports"),
     ):
-        assert main.main(
-            [
-                "--format",
-                "csv",
-                "--fail-on-severity",
-                "HIGH",
-                "--output-dir",
-                str(tmp_path),
-            ]
-        ) == 1
+        assert (
+            main.main(
+                [
+                    "--format",
+                    "csv",
+                    "--fail-on-severity",
+                    "HIGH",
+                    "--output-dir",
+                    str(tmp_path),
+                ]
+            )
+            == 1
+        )
 
 
 def test_dry_run_validates_credentials_without_auditing():

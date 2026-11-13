@@ -19,30 +19,26 @@ def test_check_public_storage_accounts_detects_public_container(
     }
     blob_service_client.list_containers.return_value = [{"name": "public-container"}]
     container_client = blob_service_client.get_container_client.return_value
-    container_client.get_container_properties.return_value = {
-        "public_access": "blob"
-    }
+    container_client.get_container_properties.return_value = {"public_access": "blob"}
 
-    auditor = AzureSecurityAuditor("https://storage.blob.core.windows.net")
+    auditor = AzureSecurityAuditor("https://storage.example.test")
     findings = list(auditor.audit())
 
     assert [finding.to_dict() for finding in findings] == [
         {
             "Servicio": "Azure Blob",
-            "Recurso": "https://storage.blob.core.windows.net/public-container",
+            "Recurso": "https://storage.example.test/public-container",
             "Riesgo": "Alto",
             "Descripción": "El contenedor permite acceso público anónimo (blob).",
         }
     ]
     mock_blob_service_client.assert_called_once_with(
-        account_url="https://storage.blob.core.windows.net",
+        account_url="https://storage.example.test",
         credential="mock-credential",
         connection_timeout=5,
         read_timeout=10,
     )
-    blob_service_client.get_container_client.assert_called_once_with(
-        "public-container"
-    )
+    blob_service_client.get_container_client.assert_called_once_with("public-container")
 
 
 @patch("azure_auditor.DefaultAzureCredential")
@@ -59,7 +55,7 @@ def test_check_public_storage_accounts_detects_public_account(
     }
     blob_service_client.list_containers.return_value = []
 
-    auditor = AzureSecurityAuditor("https://storage.blob.core.windows.net")
+    auditor = AzureSecurityAuditor("https://storage.example.test")
     findings = list(auditor.audit())
 
     assert findings[0].severity.value == "CRITICAL"
@@ -80,7 +76,7 @@ def test_audits_without_vulnerabilities_return_empty_findings(
     }
     blob_service_client.list_containers.return_value = []
 
-    auditor = AzureSecurityAuditor("https://storage.blob.core.windows.net")
+    auditor = AzureSecurityAuditor("https://storage.example.test")
 
     assert list(auditor.audit()) == []
 
@@ -89,9 +85,7 @@ def test_audits_without_vulnerabilities_return_empty_findings(
 def test_container_inspection_uses_bounded_thread_pool(mock_executor):
     """Usa diez workers para inspeccionar contenedores Blob."""
     client = MagicMock()
-    client.get_service_properties.return_value = {
-        "allow_blob_public_access": False
-    }
+    client.get_service_properties.return_value = {"allow_blob_public_access": False}
     client.list_containers.return_value = [{"name": "container-1"}]
     client.get_container_client.return_value.get_container_properties.return_value = {
         "public_access": None
@@ -100,7 +94,7 @@ def test_container_inspection_uses_bounded_thread_pool(mock_executor):
     executor.map.side_effect = lambda function, containers: map(function, containers)
 
     auditor = AzureSecurityAuditor(
-        "https://storage.blob.core.windows.net",
+        "https://storage.example.test",
         blob_service_client=client,
     )
 
@@ -110,7 +104,7 @@ def test_container_inspection_uses_bounded_thread_pool(mock_executor):
 
 @pytest.mark.parametrize(
     "storage_account_url",
-    [None, "", "http://storage.blob.core.windows.net", "https://"],
+    [None, "", "http://storage.example.test", "https://"],
 )
 def test_storage_account_url_requires_valid_https(storage_account_url):
     """Rechaza URLs nulas, HTTP y URLs HTTPS sin hostname."""

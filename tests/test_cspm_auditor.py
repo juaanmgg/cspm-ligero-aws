@@ -11,9 +11,7 @@ from core.exceptions import AuthenticationError
 def test_check_iam_mfa_detects_missing_mfa(mock_boto_client):
     """Detecta y registra un usuario IAM que no tiene dispositivos MFA."""
     iam_client = mock_boto_client.return_value
-    iam_client.list_users.return_value = {
-        "Users": [{"UserName": "usuario-sin-mfa"}]
-    }
+    iam_client.list_users.return_value = {"Users": [{"UserName": "usuario-sin-mfa"}]}
     iam_client.list_mfa_devices.return_value = {"MFADevices": []}
 
     auditor = CloudSecurityAuditor()

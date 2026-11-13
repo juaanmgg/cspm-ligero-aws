@@ -22,9 +22,7 @@ def sample_findings() -> list[Finding]:
 
 
 def test_csv_reporter_writes_typed_finding_fields(tmp_path):
-    report_path = CSVReporter().generate(
-        sample_findings(), tmp_path, "20261113_000000"
-    )
+    report_path = CSVReporter().generate(sample_findings(), tmp_path, "20261113_000000")
 
     with report_path.open(encoding="utf-8", newline="") as report_file:
         rows = list(csv.DictReader(report_file))
@@ -50,9 +48,7 @@ def test_json_reporter_writes_schema_fields_and_iso_timestamp(tmp_path):
 
 
 def test_pdf_reporter_supports_unicode_text(tmp_path):
-    report_path = PDFReporter().generate(
-        sample_findings(), tmp_path, "20261113_000000"
-    )
+    report_path = PDFReporter().generate(sample_findings(), tmp_path, "20261113_000000")
 
     assert report_path.exists()
     assert report_path.read_bytes().startswith(b"%PDF")

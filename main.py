@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 
 from azure_auditor import AzureSecurityAuditor
-from core.exceptions import AuthenticationError
+from core.exceptions import CSPMError
 from core.logger import setup_logging
 from core.models import Finding, Severity
 from cspm_auditor import AWSSecurityAuditor
@@ -152,7 +152,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             print("Credenciales válidas")
             return 0
         collected_findings = collect_findings(args.provider)
-    except AuthenticationError as error:
+    except CSPMError as error:
         LOGGER.error("%s", error)
         return 2
 
