@@ -1,5 +1,7 @@
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from azure_auditor import AzureSecurityAuditor
 
 
@@ -104,3 +106,13 @@ def test_container_inspection_uses_bounded_thread_pool(mock_executor):
 
     assert list(auditor.audit()) == []
     mock_executor.assert_called_once_with(max_workers=10)
+
+
+@pytest.mark.parametrize(
+    "storage_account_url",
+    [None, "", "http://storage.blob.core.windows.net", "https://"],
+)
+def test_storage_account_url_requires_valid_https(storage_account_url):
+    """Rechaza URLs nulas, HTTP y URLs HTTPS sin hostname."""
+    with pytest.raises(ValueError):
+        AzureSecurityAuditor(storage_account_url)

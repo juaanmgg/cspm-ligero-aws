@@ -33,6 +33,7 @@ class Finding:
     severity: Severity
     description: str
     timestamp: datetime
+    remediation: str = ""
 
     def to_dict(self) -> dict[str, str]:
         """Return the legacy Spanish keys used by the report writers."""

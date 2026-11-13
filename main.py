@@ -1,23 +1,33 @@
-import argparse
-import csv
-import os
-from datetime import datetime
-from pathlib import Path
-from collections.abc import Mapping, Sequence
-import logging
+"""Command-line interface for the multi-cloud CSPM auditor."""
 
-from fpdf import FPDF
+import argparse
+from collections.abc import Sequence
+from datetime import datetime
+import logging
+import os
+from pathlib import Path
 
 from azure_auditor import AzureSecurityAuditor
 from core.exceptions import AuthenticationError
 from core.logger import setup_logging
-from core.models import Finding
+from core.models import Finding, Severity
 from cspm_auditor import AWSSecurityAuditor
+from reporters import CSVReporter, JSONReporter, PDFReporter
+from reporters.base import BaseReporter
 
-
-SEVERITY_LEVELS = {"Crítico": 2, "Alto": 1, "Todos": 0}
-SEVERITY_RANK = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1, "INFO": 0}
-FINDING_FIELDS = ["Servicio", "Recurso", "Riesgo", "Descripción"]
+SEVERITY_LEVELS = {"Crítico": 4, "Alto": 3, "Medio": 2, "Bajo": 1, "Todos": 0}
+SEVERITY_RANK = {
+    Severity.CRITICAL: 4,
+    Severity.HIGH: 3,
+    Severity.MEDIUM: 2,
+    Severity.LOW: 1,
+    Severity.INFO: 0,
+}
+REPORTERS: dict[str, BaseReporter] = {
+    "csv": CSVReporter(),
+    "json": JSONReporter(),
+    "pdf": PDFReporter(),
+}
 LOGGER = logging.getLogger(__name__)
 
 
@@ -35,9 +45,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--format",
         dest="report_format",
-        choices=("csv", "pdf", "both"),
-        default="both",
-        help="Formato de los reportes (por defecto: both).",
+        choices=("csv", "pdf", "json", "all"),
+        default="all",
+        help="Formato de los reportes (por defecto: all).",
     )
     parser.add_argument(
         "--min-severity",
@@ -53,7 +63,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--fail-on-severity",
-        choices=("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"),
+        choices=tuple(severity.value for severity in Severity),
         default=None,
         help="Devuelve código 1 si aparece esta severidad o una superior.",
     )
@@ -74,10 +84,8 @@ def build_parser() -> argparse.ArgumentParser:
 def collect_findings(provider: str) -> list[Finding]:
     """Ejecuta las auditorías seleccionadas y devuelve sus hallazgos."""
     findings: list[Finding] = []
-
     if provider in ("aws", "all"):
         findings.extend(AWSSecurityAuditor().audit())
-
     if provider in ("azure", "all"):
         storage_account_url = os.getenv("AZURE_STORAGE_ACCOUNT_URL")
         if not storage_account_url:
@@ -85,7 +93,6 @@ def collect_findings(provider: str) -> list[Finding]:
                 "AZURE_STORAGE_ACCOUNT_URL es obligatorio para auditar Azure."
             )
         findings.extend(AzureSecurityAuditor(storage_account_url).audit())
-
     return findings
 
 
@@ -102,83 +109,37 @@ def validate_credentials(provider: str) -> None:
         AzureSecurityAuditor(storage_account_url).check_credentials()
 
 
-def has_severity_at_least(
-    findings: Sequence[Finding | Mapping[str, str]], threshold: str
-) -> bool:
-    """Return whether findings contain the requested severity threshold."""
-    threshold_level = SEVERITY_RANK[threshold]
-    for finding in findings:
-        if isinstance(finding, Finding):
-            severity = finding.severity.value
-        else:
-            severity = {
-                "Crítico": "CRITICAL",
-                "Alto": "HIGH",
-                "Medio": "MEDIUM",
-                "Bajo": "LOW",
-                "Info": "INFO",
-            }.get(finding.get("Riesgo", ""), "INFO")
-        if SEVERITY_RANK[severity] >= threshold_level:
-            return True
-    return False
-
-
 def filter_findings(
-    findings: Sequence[Finding | Mapping[str, str]], minimum_severity: str
-) -> list[dict[str, str]]:
-    """Filtra hallazgos conservando la severidad mínima solicitada."""
+    findings: Sequence[Finding], minimum_severity: str
+) -> list[Finding]:
+    """Filtra hallazgos sin convertirlos a diccionarios intermedios."""
     minimum_level = SEVERITY_LEVELS[minimum_severity]
-    filtered: list[dict[str, str]] = []
-    for finding in findings:
-        legacy_finding = finding.to_dict() if isinstance(finding, Finding) else dict(finding)
-        if SEVERITY_LEVELS.get(legacy_finding.get("Riesgo", ""), 0) >= minimum_level:
-            filtered.append(legacy_finding)
-    return filtered
+    return [
+        finding
+        for finding in findings
+        if SEVERITY_RANK[finding.severity] >= minimum_level
+    ]
 
 
-def write_csv_report(findings: Sequence[dict[str, str]], output_dir: Path, timestamp: str) -> Path:
-    """Escribe los hallazgos en un reporte CSV."""
-    report_path = output_dir / f"reporte_seguridad_{timestamp}.csv"
-    with report_path.open("w", newline="", encoding="utf-8") as report_file:
-        writer = csv.DictWriter(report_file, fieldnames=FINDING_FIELDS)
-        writer.writeheader()
-        writer.writerows(findings)
-    return report_path
+def generate_reports(
+    findings: Sequence[Finding],
+    report_format: str,
+    output_dir: Path,
+    timestamp: str,
+) -> list[Path]:
+    """Dispatch findings to the selected report generators."""
+    formats = ("csv", "pdf", "json") if report_format == "all" else (report_format,)
+    return [
+        REPORTERS[format_name].generate(findings, output_dir, timestamp)
+        for format_name in formats
+    ]
 
 
-def write_pdf_report(findings: Sequence[dict[str, str]], output_dir: Path, timestamp: str) -> Path:
-    """Escribe los hallazgos en un reporte PDF."""
-    report_path = output_dir / f"reporte_seguridad_{timestamp}.pdf"
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("helvetica", "B", 16)
-    pdf.cell(0, 10, "Auditoria de Seguridad CSPM", new_x="LMARGIN", new_y="NEXT", align="C")
-    pdf.ln(5)
-
-    for index, finding in enumerate(findings, 1):
-        if finding["Riesgo"] == "Crítico":
-            pdf.set_text_color(220, 53, 69)
-        elif finding["Riesgo"] == "Alto":
-            pdf.set_text_color(253, 126, 20)
-
-        pdf.set_font("helvetica", "B", 12)
-        title = (
-            f"{index}. [{finding['Riesgo']}] "
-            f"{finding['Servicio']} - {finding['Recurso']}"
-        )
-        pdf.cell(0, 8, _pdf_safe_text(title), new_x="LMARGIN", new_y="NEXT")
-        pdf.set_text_color(0, 0, 0)
-        pdf.set_font("helvetica", "", 11)
-        pdf.multi_cell(0, 6, _pdf_safe_text(f"Detalle: {finding['Descripción']}"))
-        pdf.ln(4)
-
-    pdf.output(str(report_path))
-    return report_path
-
-
-def _pdf_safe_text(value: str) -> str:
-    """Convierte texto Unicode a una representación compatible con Helvetica."""
-    return value.encode("latin-1", errors="replace").decode("latin-1")
+def _severity_at_least(findings: Sequence[Finding], threshold: str) -> bool:
+    threshold_level = SEVERITY_RANK[Severity(threshold)]
+    return any(
+        SEVERITY_RANK[finding.severity] >= threshold_level for finding in findings
+    )
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -190,33 +151,27 @@ def main(argv: Sequence[str] | None = None) -> int:
             validate_credentials(args.provider)
             print("Credenciales válidas")
             return 0
-
         collected_findings = collect_findings(args.provider)
-        fail_on_severity = (
-            has_severity_at_least(collected_findings, args.fail_on_severity)
-            if args.fail_on_severity
-            else False
-        )
-        findings = filter_findings(collected_findings, args.min_severity)
     except AuthenticationError as error:
         LOGGER.error("%s", error)
         return 2
 
+    should_fail = bool(
+        args.fail_on_severity
+        and _severity_at_least(collected_findings, args.fail_on_severity)
+    )
+    findings = filter_findings(collected_findings, args.min_severity)
     args.output_dir.mkdir(parents=True, exist_ok=True)
     if not findings:
         print("No se encontraron hallazgos para los filtros seleccionados.")
-        return 1 if fail_on_severity else 0
+        return 1 if should_fail else 0
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    generated_reports: list[Path] = []
-    if args.report_format in ("csv", "both"):
-        generated_reports.append(write_csv_report(findings, args.output_dir, timestamp))
-    if args.report_format in ("pdf", "both"):
-        generated_reports.append(write_pdf_report(findings, args.output_dir, timestamp))
-
-    for report in generated_reports:
+    for report in generate_reports(
+        findings, args.report_format, args.output_dir, timestamp
+    ):
         print(f"Reporte generado: {report}")
-    return 1 if fail_on_severity else 0
+    return 1 if should_fail else 0
 
 
 if __name__ == "__main__":

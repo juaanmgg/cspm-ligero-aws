@@ -90,6 +90,7 @@ class AWSSecurityAuditor(BaseAuditor):
             "IAM",
             f"Usuario IAM: {username}",
             "El usuario no tiene Autenticación Multifactor (MFA) habilitada.",
+            "Habilita MFA para el usuario IAM.",
         )
 
     def check_open_ssh(self) -> Iterator[Finding]:
@@ -100,21 +101,34 @@ class AWSSecurityAuditor(BaseAuditor):
                 "SecurityGroups"
             ]:
                 for rule in security_group["IpPermissions"]:
-                    ssh_or_all = (
-                        rule.get("FromPort") == 22 and rule.get("ToPort") == 22
-                    ) or rule.get("IpProtocol") == "-1"
-                    if ssh_or_all:
-                        for ip_range in rule.get("IpRanges", []):
-                            if ip_range.get("CidrIp") == "0.0.0.0/0":
-                                group_id = security_group["GroupId"]
-                                yield self._finding(
-                                    "open-ssh",
-                                    group_id,
-                                    Severity.CRITICAL,
-                                    "EC2",
-                                    f"Security Group: {security_group['GroupName']} ({group_id})",
-                                    "El puerto 22 (SSH) está expuesto a todo Internet (0.0.0.0/0).",
-                                )
+                    from_port = rule.get("FromPort")
+                    to_port = rule.get("ToPort")
+                    port_22_open = rule.get("IpProtocol") == "-1" or (
+                        isinstance(from_port, int)
+                        and isinstance(to_port, int)
+                        and from_port <= 22 <= to_port
+                    )
+                    if not port_22_open:
+                        continue
+                    exposed_to_ipv4 = any(
+                        ip_range.get("CidrIp") == "0.0.0.0/0"
+                        for ip_range in rule.get("IpRanges", [])
+                    )
+                    exposed_to_ipv6 = any(
+                        ip_range.get("CidrIpv6") == "::/0"
+                        for ip_range in rule.get("Ipv6Ranges", [])
+                    )
+                    if exposed_to_ipv4 or exposed_to_ipv6:
+                        group_id = security_group["GroupId"]
+                        yield self._finding(
+                            "open-ssh",
+                            group_id,
+                            Severity.CRITICAL,
+                            "EC2",
+                            f"Security Group: {security_group['GroupName']} ({group_id})",
+                            "El puerto 22 (SSH) está expuesto a todo Internet.",
+                            "Restringe el puerto 22 a redes de administración conocidas.",
+                        )
         except NoCredentialsError as error:
             raise AuthenticationError("No se encontraron credenciales de AWS.") from error
         except ClientError as error:
@@ -150,6 +164,7 @@ class AWSSecurityAuditor(BaseAuditor):
                 "S3",
                 f"Bucket S3: {bucket_name}",
                 "El bucket no tiene bloqueado el acceso público en todas sus políticas.",
+                "Activa todas las opciones de bloqueo de acceso público del bucket.",
             )
         except NoCredentialsError as error:
             raise AuthenticationError("No se encontraron credenciales de AWS.") from error
@@ -162,6 +177,7 @@ class AWSSecurityAuditor(BaseAuditor):
                     "S3",
                     f"Bucket S3: {bucket_name}",
                     "El bucket NO tiene configurado ningún bloque de acceso público.",
+                    "Configura Public Access Block en el bucket S3.",
                 )
             raise ResourceAccessError(
                 f"Error leyendo el bucket S3 {bucket_name}: {error}"
@@ -175,6 +191,7 @@ class AWSSecurityAuditor(BaseAuditor):
         service: str,
         resource: str,
         description: str,
+        remediation: str,
     ) -> Finding:
         return Finding(
             id=f"aws-{check_id}-{resource_id}",
@@ -184,6 +201,7 @@ class AWSSecurityAuditor(BaseAuditor):
             severity=severity,
             description=description,
             timestamp=datetime.now(timezone.utc),
+            remediation=remediation,
         )
 
 

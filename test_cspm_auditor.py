@@ -63,14 +63,64 @@ def test_check_open_ssh_detects_public_port_22(mock_boto_client):
             "Recurso": "Security Group: grupo-publico (sg-0123456789abcdef0)",
             "Servicio": "EC2",
             "Riesgo": "Crítico",
-            "Descripción": (
-                "El puerto 22 (SSH) está expuesto a todo Internet (0.0.0.0/0)."
-            ),
+            "Descripción": "El puerto 22 (SSH) está expuesto a todo Internet.",
         }
     ]
     mock_boto_client.assert_any_call(
         "ec2", region_name="us-east-1", config=AWS_CLIENT_CONFIG
     )
+
+
+@patch("boto3.client")
+def test_check_open_ssh_detects_port_range(mock_boto_client):
+    """Detecta SSH cuando el puerto está dentro de un rango permitido."""
+    ec2_client = mock_boto_client.return_value
+    ec2_client.describe_security_groups.return_value = {
+        "SecurityGroups": [
+            {
+                "GroupName": "grupo-rango",
+                "GroupId": "sg-range",
+                "IpPermissions": [
+                    {
+                        "FromPort": 20,
+                        "ToPort": 25,
+                        "IpProtocol": "tcp",
+                        "IpRanges": [{"CidrIp": "0.0.0.0/0"}],
+                    }
+                ],
+            }
+        ]
+    }
+
+    findings = list(CloudSecurityAuditor().check_open_ssh())
+
+    assert len(findings) == 1
+
+
+@patch("boto3.client")
+def test_check_open_ssh_detects_public_ipv6(mock_boto_client):
+    """Detecta SSH expuesto mediante el rango IPv6 global."""
+    ec2_client = mock_boto_client.return_value
+    ec2_client.describe_security_groups.return_value = {
+        "SecurityGroups": [
+            {
+                "GroupName": "grupo-ipv6",
+                "GroupId": "sg-ipv6",
+                "IpPermissions": [
+                    {
+                        "FromPort": 22,
+                        "ToPort": 22,
+                        "IpProtocol": "tcp",
+                        "Ipv6Ranges": [{"CidrIpv6": "::/0"}],
+                    }
+                ],
+            }
+        ]
+    }
+
+    findings = list(CloudSecurityAuditor().check_open_ssh())
+
+    assert len(findings) == 1
 
 
 @patch("boto3.client")

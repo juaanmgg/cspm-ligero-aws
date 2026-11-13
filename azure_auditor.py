@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 import logging
 from typing import Any
+from urllib.parse import urlsplit
 
 from azure.core.exceptions import AzureError, ClientAuthenticationError
 from azure.identity import DefaultAzureCredential
@@ -26,8 +27,8 @@ class AzureSecurityAuditor(BaseAuditor):
         credential: Any | None = None,
         blob_service_client: Any | None = None,
     ) -> None:
-        if not storage_account_url or not storage_account_url.startswith("https://"):
-            raise ValueError("storage_account_url debe ser una URL HTTPS no nula.")
+        if not self._is_valid_storage_url(storage_account_url):
+            raise ValueError("storage_account_url debe ser una URL HTTPS válida.")
         self.storage_account_url = storage_account_url
         self.credential = credential
         if blob_service_client is None:
@@ -84,6 +85,7 @@ class AzureSecurityAuditor(BaseAuditor):
                 Severity.CRITICAL,
                 self.storage_account_url,
                 "La cuenta de almacenamiento permite acceso público anónimo a blobs.",
+                "Deshabilita el acceso público anónimo en la cuenta de almacenamiento.",
             )
 
         containers = self.blob_service_client.list_containers()
@@ -107,6 +109,7 @@ class AzureSecurityAuditor(BaseAuditor):
             Severity.HIGH,
             resource,
             f"El contenedor permite acceso público anónimo ({public_access}).",
+            "Deshabilita el acceso público del contenedor.",
         )
 
     def run(self) -> Iterator[Finding]:
@@ -120,12 +123,31 @@ class AzureSecurityAuditor(BaseAuditor):
             return resource.get(name)
         return getattr(resource, name, None)
 
+    @staticmethod
+    def _is_valid_storage_url(storage_account_url: str) -> bool:
+        """Validate an HTTPS URL with a hostname and no embedded credentials."""
+        if not isinstance(storage_account_url, str):
+            return False
+        try:
+            parsed = urlsplit(storage_account_url)
+            return (
+                parsed.scheme == "https"
+                and parsed.hostname is not None
+                and parsed.username is None
+                and parsed.password is None
+                and parsed.query == ""
+                and parsed.fragment == ""
+            )
+        except ValueError:
+            return False
+
     def _finding(
         self,
         finding_id: str,
         severity: Severity,
         resource: str,
         description: str,
+        remediation: str,
     ) -> Finding:
         return Finding(
             id=f"azure-{finding_id}",
@@ -135,4 +157,5 @@ class AzureSecurityAuditor(BaseAuditor):
             severity=severity,
             description=description,
             timestamp=datetime.now(timezone.utc),
+            remediation=remediation,
         )

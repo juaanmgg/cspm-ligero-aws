@@ -16,7 +16,7 @@ Una herramienta CLI de auditoría de seguridad automatizada diseñada para ident
   - Verificación de bloqueos de acceso público en Buckets S3.
 - **Azure Audit:**
   - Detección de cuentas de almacenamiento y contenedores Blob con acceso anónimo habilitado.
-- **CLI Avanzada:** Filtrado por proveedor, nivel de severidad y múltiples formatos de exportación (CSV / PDF).
+- **CLI Avanzada:** Filtrado por proveedor, nivel de severidad y múltiples formatos de exportación (CSV / JSON / PDF).
 - **CI/CD Integrado:** Pruebas unitarias automáticas con `pytest` y ejecución programada semanal con GitHub Actions.
 
 ## 🚀 Requisitos Previos
@@ -45,7 +45,7 @@ python main.py --provider all --output-dir ./reportes
 | Opción | Valores Permitidos | Valor por Defecto | Descripción |
 | :--- | :--- | :--- | :--- |
 | `--provider` | `aws`, `azure`, `all` | `aws` | Proveedor cloud a auditar |
-| `--format` | `csv`, `pdf`, `both` | `both` | Formato de generación del reporte |
+| `--format` | `csv`, `pdf`, `json`, `all` | `all` | Formato de generación del reporte |
 | `--min-severity` | `Crítico`, `Alto`, `Todos` | `Todos` | Filtro de severidad mínima a reportar |
 | `--output-dir` | Ruta de directorio | `.` | Carpeta donde se guardarán los reportes |
 
@@ -66,5 +66,5 @@ docker build -t cspm-ligero-aws .
 Ejecuta la auditoría pasando argumentos de la CLI al contenedor:
 
 ```bash
-docker run --rm cspm-ligero-aws --provider aws --format both --output-dir /app/reportes
+docker run --rm cspm-ligero-aws --provider aws --format all --output-dir /app/reportes
 ```
