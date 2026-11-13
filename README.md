@@ -48,11 +48,28 @@ python main.py --provider all --output-dir ./reportes
 | `--format` | `csv`, `pdf`, `json`, `all` | `all` | Formato de generación del reporte |
 | `--min-severity` | `Crítico`, `Alto`, `Todos` | `Todos` | Filtro de severidad mínima a reportar |
 | `--output-dir` | Ruta de directorio | `.` | Carpeta donde se guardarán los reportes |
+| `--fail-on-severity` | `CRITICAL`, `HIGH`, `MEDIUM`, `LOW`, `INFO` | — | Devuelve 1 si se alcanza la severidad indicada |
+| `--dry-run` | Flag | Desactivado | Valida credenciales sin auditar recursos |
+| `--verbose`, `-v` | Flag | Desactivado | Activa logging detallado |
+
+### Códigos de salida
+
+- `0`: Ejecución correcta; no se superó un umbral crítico.
+- `1`: Se superó el umbral configurado con `--fail-on-severity`.
+- `2`: Error operativo o de credenciales.
 
 ## 🧪 Ejecución de Pruebas Unitarias
 
 ```bash
 pytest -v
+```
+
+Para validar cobertura y calidad estática:
+
+```bash
+ruff check .
+mypy .
+pytest -v --cov=. --cov-report=term-missing --cov-fail-under=85
 ```
 
 ## 🐳 Ejecución con Docker

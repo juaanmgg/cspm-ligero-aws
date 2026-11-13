@@ -73,7 +73,9 @@ class AWSSecurityAuditor(BaseAuditor):
             users = self.iam_client.list_users()["Users"]
             with ThreadPoolExecutor(max_workers=10) as executor:
                 findings = executor.map(self._check_user_mfa, users)
-                yield from findings
+                for finding in findings:
+                    if finding is not None:
+                        yield finding
         except NoCredentialsError as error:
             raise AuthenticationError("No se encontraron credenciales de AWS.") from error
         except ClientError as error:
