@@ -1,77 +1,105 @@
+"""Azure Blob Storage security posture auditor."""
+
+from collections.abc import Iterator
+from datetime import datetime, timezone
+import logging
 from typing import Any
 
+from azure.core.exceptions import AzureError
 from azure.identity import DefaultAzureCredential
 from azure.storage.blob import BlobServiceClient
 
+from core.base import BaseAuditor
+from core.exceptions import ResourceAccessError
+from core.models import CloudProvider, Finding, Severity
 
-class AzureSecurityAuditor:
-    """Audita configuraciones de acceso público en Azure Blob Storage."""
+LOGGER = logging.getLogger(__name__)
+
+
+class AzureSecurityAuditor(BaseAuditor):
+    """Audit public access settings in an Azure Blob Storage account."""
 
     def __init__(
         self,
         storage_account_url: str,
         credential: Any | None = None,
+        blob_service_client: Any | None = None,
     ) -> None:
-        """Inicializa el auditor con una cuenta de almacenamiento de Azure."""
+        if not storage_account_url or not storage_account_url.startswith("https://"):
+            raise ValueError("storage_account_url debe ser una URL HTTPS no nula.")
         self.storage_account_url = storage_account_url
-        self.credential = (
-            credential if credential is not None else DefaultAzureCredential()
-        )
-        self.blob_service_client = BlobServiceClient(
-            account_url=storage_account_url,
-            credential=self.credential,
-        )
-        self.findings: list[dict[str, str]] = []
+        self.credential = credential
+        if blob_service_client is None:
+            self.credential = (
+                credential if credential is not None else DefaultAzureCredential()
+            )
+            self.blob_service_client = BlobServiceClient(
+                account_url=storage_account_url,
+                credential=self.credential,
+            )
+        else:
+            self.blob_service_client = blob_service_client
 
-    def check_public_storage_accounts(self) -> None:
-        """Detecta acceso anónimo habilitado en la cuenta o sus contenedores."""
+    def audit(self) -> Iterator[Finding]:
+        """Yield findings for public account and container access."""
+        try:
+            yield from self.check_public_storage_accounts()
+        except AzureError as error:
+            LOGGER.error("Error leyendo Azure Blob Storage: %s", error)
+            raise ResourceAccessError(
+                f"Error leyendo Azure Blob Storage: {error}"
+            ) from error
+
+    def check_public_storage_accounts(self) -> Iterator[Finding]:
+        """Yield account and container public-access findings."""
         service_properties = self.blob_service_client.get_service_properties()
-        allow_blob_public_access = self._get_property(
-            service_properties, "allow_blob_public_access"
-        )
-
-        if allow_blob_public_access is True:
-            self.findings.append(
-                {
-                    "Servicio": "Azure Blob",
-                    "Recurso": self.storage_account_url,
-                    "Riesgo": "Crítico",
-                    "Descripción": (
-                        "La cuenta de almacenamiento permite acceso público "
-                        "anónimo a blobs."
-                    ),
-                }
+        if self._get_property(service_properties, "allow_blob_public_access") is True:
+            yield self._finding(
+                "account-public",
+                Severity.CRITICAL,
+                self.storage_account_url,
+                "La cuenta de almacenamiento permite acceso público anónimo a blobs.",
             )
 
         for container in self.blob_service_client.list_containers():
             container_name = self._get_property(container, "name")
-            container_client = self.blob_service_client.get_container_client(
+            container_properties = self.blob_service_client.get_container_client(
                 container_name
-            )
-            container_properties = container_client.get_container_properties()
+            ).get_container_properties()
             public_access = self._get_property(container_properties, "public_access")
-
             if public_access in {"blob", "container"}:
-                self.findings.append(
-                    {
-                        "Servicio": "Azure Blob",
-                        "Recurso": f"{self.storage_account_url}/{container_name}",
-                        "Riesgo": "Alto",
-                        "Descripción": (
-                            "El contenedor permite acceso público anónimo "
-                            f"({public_access})."
-                        ),
-                    }
+                resource = f"{self.storage_account_url}/{container_name}"
+                yield self._finding(
+                    f"container-{public_access}",
+                    Severity.HIGH,
+                    resource,
+                    f"El contenedor permite acceso público anónimo ({public_access}).",
                 )
 
-    def run(self) -> list[dict[str, str]]:
-        """Ejecuta la auditoría y devuelve todos los hallazgos encontrados."""
-        self.check_public_storage_accounts()
-        return self.findings
+    def run(self) -> Iterator[Finding]:
+        """Backward-compatible alias for :meth:`audit`."""
+        return self.audit()
 
     @staticmethod
     def _get_property(resource: Any, name: str) -> Any:
-        """Obtiene una propiedad tanto de modelos Azure como de diccionarios."""
+        """Read a property from either an Azure model or a dictionary."""
         if isinstance(resource, dict):
             return resource.get(name)
         return getattr(resource, name, None)
+
+    def _finding(
+        self,
+        finding_id: str,
+        severity: Severity,
+        resource: str,
+        description: str,
+    ) -> Finding:
+        return Finding(
+            id=f"azure-{finding_id}",
+            provider=CloudProvider.AZURE,
+            service="Azure Blob",
+            resource=resource,
+            severity=severity,
+            description=description,
+            timestamp=datetime.now(timezone.utc),
+        )

@@ -3,12 +3,13 @@ import csv
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Sequence
+from collections.abc import Mapping, Sequence
 
 from fpdf import FPDF
 
 from azure_auditor import AzureSecurityAuditor
-from cspm_auditor import CloudSecurityAuditor
+from core.models import Finding
+from cspm_auditor import AWSSecurityAuditor
 
 
 SEVERITY_LEVELS = {"Crítico": 2, "Alto": 1, "Todos": 0}
@@ -48,16 +49,12 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def collect_findings(provider: str) -> list[dict[str, str]]:
+def collect_findings(provider: str) -> list[Finding]:
     """Ejecuta las auditorías seleccionadas y devuelve sus hallazgos."""
-    findings: list[dict[str, str]] = []
+    findings: list[Finding] = []
 
     if provider in ("aws", "all"):
-        aws_auditor = CloudSecurityAuditor()
-        aws_auditor.check_iam_mfa()
-        aws_auditor.check_open_ssh()
-        aws_auditor.check_public_s3_buckets()
-        findings.extend(aws_auditor.findings)
+        findings.extend(AWSSecurityAuditor().audit())
 
     if provider in ("azure", "all"):
         storage_account_url = os.getenv("AZURE_STORAGE_ACCOUNT_URL")
@@ -65,21 +62,22 @@ def collect_findings(provider: str) -> list[dict[str, str]]:
             raise ValueError(
                 "AZURE_STORAGE_ACCOUNT_URL es obligatorio para auditar Azure."
             )
-        findings.extend(AzureSecurityAuditor(storage_account_url).run())
+        findings.extend(AzureSecurityAuditor(storage_account_url).audit())
 
     return findings
 
 
 def filter_findings(
-    findings: Sequence[dict[str, str]], minimum_severity: str
+    findings: Sequence[Finding | Mapping[str, str]], minimum_severity: str
 ) -> list[dict[str, str]]:
     """Filtra hallazgos conservando la severidad mínima solicitada."""
     minimum_level = SEVERITY_LEVELS[minimum_severity]
-    return [
-        finding
-        for finding in findings
-        if SEVERITY_LEVELS.get(finding.get("Riesgo", ""), 0) >= minimum_level
-    ]
+    filtered: list[dict[str, str]] = []
+    for finding in findings:
+        legacy_finding = finding.to_dict() if isinstance(finding, Finding) else dict(finding)
+        if SEVERITY_LEVELS.get(legacy_finding.get("Riesgo", ""), 0) >= minimum_level:
+            filtered.append(legacy_finding)
+    return filtered
 
 
 def write_csv_report(findings: Sequence[dict[str, str]], output_dir: Path, timestamp: str) -> Path:

@@ -22,18 +22,14 @@ def test_check_public_storage_accounts_detects_public_container(
     }
 
     auditor = AzureSecurityAuditor("https://storage.blob.core.windows.net")
-    findings = auditor.run()
+    findings = list(auditor.audit())
 
-    assert findings == [
+    assert [finding.to_dict() for finding in findings] == [
         {
             "Servicio": "Azure Blob",
-            "Recurso": (
-                "https://storage.blob.core.windows.net/public-container"
-            ),
+            "Recurso": "https://storage.blob.core.windows.net/public-container",
             "Riesgo": "Alto",
-            "Descripción": (
-                "El contenedor permite acceso público anónimo (blob)."
-            ),
+            "Descripción": "El contenedor permite acceso público anónimo (blob).",
         }
     ]
     mock_blob_service_client.assert_called_once_with(
@@ -60,10 +56,10 @@ def test_check_public_storage_accounts_detects_public_account(
     blob_service_client.list_containers.return_value = []
 
     auditor = AzureSecurityAuditor("https://storage.blob.core.windows.net")
-    findings = auditor.run()
+    findings = list(auditor.audit())
 
-    assert findings[0]["Riesgo"] == "Crítico"
-    assert findings[0]["Servicio"] == "Azure Blob"
+    assert findings[0].severity.value == "CRITICAL"
+    assert findings[0].service == "Azure Blob"
 
 
 @patch("azure_auditor.DefaultAzureCredential")
@@ -82,4 +78,4 @@ def test_audits_without_vulnerabilities_return_empty_findings(
 
     auditor = AzureSecurityAuditor("https://storage.blob.core.windows.net")
 
-    assert auditor.run() == []
+    assert list(auditor.audit()) == []

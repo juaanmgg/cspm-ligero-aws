@@ -1,8 +1,10 @@
 from unittest.mock import patch
 
 from botocore.exceptions import ClientError, NoCredentialsError
+import pytest
 
 from cspm_auditor import CloudSecurityAuditor
+from core.exceptions import AuthenticationError
 
 
 @patch("boto3.client")
@@ -15,9 +17,9 @@ def test_check_iam_mfa_detects_missing_mfa(mock_boto_client):
     iam_client.list_mfa_devices.return_value = {"MFADevices": []}
 
     auditor = CloudSecurityAuditor()
-    auditor.check_iam_mfa()
+    findings = list(auditor.check_iam_mfa())
 
-    assert auditor.findings == [
+    assert [finding.to_dict() for finding in findings] == [
         {
             "Recurso": "Usuario IAM: usuario-sin-mfa",
             "Servicio": "IAM",
@@ -52,9 +54,9 @@ def test_check_open_ssh_detects_public_port_22(mock_boto_client):
     }
 
     auditor = CloudSecurityAuditor()
-    auditor.check_open_ssh()
+    findings = list(auditor.check_open_ssh())
 
-    assert auditor.findings == [
+    assert [finding.to_dict() for finding in findings] == [
         {
             "Recurso": "Security Group: grupo-publico (sg-0123456789abcdef0)",
             "Servicio": "EC2",
@@ -83,9 +85,9 @@ def test_check_public_s3_buckets_detects_unrestricted_bucket(mock_boto_client):
     )
 
     auditor = CloudSecurityAuditor()
-    auditor.check_public_s3_buckets()
+    findings = list(auditor.check_public_s3_buckets())
 
-    assert auditor.findings == [
+    assert [finding.to_dict() for finding in findings] == [
         {
             "Recurso": "Bucket S3: bucket-publico",
             "Servicio": "S3",
@@ -107,11 +109,7 @@ def test_audits_without_vulnerabilities_return_empty_findings(mock_boto_client):
     aws_client.list_buckets.return_value = {"Buckets": []}
 
     auditor = CloudSecurityAuditor()
-    auditor.check_iam_mfa()
-    auditor.check_open_ssh()
-    auditor.check_public_s3_buckets()
-
-    assert auditor.findings == []
+    assert list(auditor.audit()) == []
 
 
 @patch.dict("os.environ", {"AWS_DEFAULT_REGION": "eu-west-1"})
@@ -128,37 +126,32 @@ def test_cloud_security_auditor_uses_configured_aws_region(mock_boto_client):
 
 
 @patch("boto3.client")
-def test_check_iam_mfa_handles_missing_aws_credentials(mock_boto_client, capsys):
+def test_check_iam_mfa_handles_missing_aws_credentials(mock_boto_client):
     """Muestra el error de credenciales y no interrumpe la auditoría IAM."""
     mock_boto_client.return_value.list_users.side_effect = NoCredentialsError()
 
     auditor = CloudSecurityAuditor()
-    auditor.check_iam_mfa()
-
-    assert "[!] Error: No se encontraron credenciales de AWS." in capsys.readouterr().out
+    with pytest.raises(AuthenticationError):
+        list(auditor.check_iam_mfa())
 
 
 @patch("boto3.client")
-def test_check_open_ssh_handles_missing_aws_credentials(mock_boto_client, capsys):
+def test_check_open_ssh_handles_missing_aws_credentials(mock_boto_client):
     """Muestra el error de credenciales y no interrumpe la auditoría EC2."""
     mock_boto_client.return_value.describe_security_groups.side_effect = (
         NoCredentialsError()
     )
 
     auditor = CloudSecurityAuditor()
-    auditor.check_open_ssh()
-
-    assert "[!] Error: No se encontraron credenciales de AWS." in capsys.readouterr().out
+    with pytest.raises(AuthenticationError):
+        list(auditor.check_open_ssh())
 
 
 @patch("boto3.client")
-def test_check_public_s3_buckets_handles_missing_aws_credentials(
-    mock_boto_client, capsys
-):
+def test_check_public_s3_buckets_handles_missing_aws_credentials(mock_boto_client):
     """Muestra el error de credenciales y no interrumpe la auditoría S3."""
     mock_boto_client.return_value.list_buckets.side_effect = NoCredentialsError()
 
     auditor = CloudSecurityAuditor()
-    auditor.check_public_s3_buckets()
-
-    assert "[!] Error: No se encontraron credenciales de AWS." in capsys.readouterr().out
+    with pytest.raises(AuthenticationError):
+        list(auditor.check_public_s3_buckets())
