@@ -3,7 +3,7 @@ from unittest.mock import patch
 from botocore.exceptions import ClientError, NoCredentialsError
 import pytest
 
-from cspm_auditor import CloudSecurityAuditor
+from cspm_auditor import AWS_CLIENT_CONFIG, CloudSecurityAuditor
 from core.exceptions import AuthenticationError
 
 
@@ -29,7 +29,9 @@ def test_check_iam_mfa_detects_missing_mfa(mock_boto_client):
             ),
         }
     ]
-    mock_boto_client.assert_any_call("iam", region_name="us-east-1")
+    mock_boto_client.assert_any_call(
+        "iam", region_name="us-east-1", config=AWS_CLIENT_CONFIG
+    )
 
 
 @patch("boto3.client")
@@ -66,7 +68,9 @@ def test_check_open_ssh_detects_public_port_22(mock_boto_client):
             ),
         }
     ]
-    mock_boto_client.assert_any_call("ec2", region_name="us-east-1")
+    mock_boto_client.assert_any_call(
+        "ec2", region_name="us-east-1", config=AWS_CLIENT_CONFIG
+    )
 
 
 @patch("boto3.client")
@@ -97,7 +101,9 @@ def test_check_public_s3_buckets_detects_unrestricted_bucket(mock_boto_client):
             ),
         }
     ]
-    mock_boto_client.assert_any_call("s3", region_name="us-east-1")
+    mock_boto_client.assert_any_call(
+        "s3", region_name="us-east-1", config=AWS_CLIENT_CONFIG
+    )
 
 
 @patch("boto3.client")
@@ -119,9 +125,9 @@ def test_cloud_security_auditor_uses_configured_aws_region(mock_boto_client):
     CloudSecurityAuditor()
 
     assert mock_boto_client.call_args_list == [
-        (("iam",), {"region_name": "eu-west-1"}),
-        (("ec2",), {"region_name": "eu-west-1"}),
-        (("s3",), {"region_name": "eu-west-1"}),
+        (("iam",), {"region_name": "eu-west-1", "config": AWS_CLIENT_CONFIG}),
+        (("ec2",), {"region_name": "eu-west-1", "config": AWS_CLIENT_CONFIG}),
+        (("s3",), {"region_name": "eu-west-1", "config": AWS_CLIENT_CONFIG}),
     ]
 
 
@@ -155,3 +161,45 @@ def test_check_public_s3_buckets_handles_missing_aws_credentials(mock_boto_clien
     auditor = CloudSecurityAuditor()
     with pytest.raises(AuthenticationError):
         list(auditor.check_public_s3_buckets())
+
+
+@patch("cspm_auditor.ThreadPoolExecutor")
+@patch("boto3.client")
+def test_iam_mfa_uses_bounded_thread_pool(mock_boto_client, mock_executor):
+    """Usa diez workers para consultar MFA sin acumular dicts legacy."""
+    iam_client = mock_boto_client.return_value
+    iam_client.list_users.return_value = {
+        "Users": [{"UserName": "user-1"}, {"UserName": "user-2"}]
+    }
+    iam_client.list_mfa_devices.return_value = {"MFADevices": []}
+    executor = mock_executor.return_value.__enter__.return_value
+    executor.map.side_effect = lambda function, users: map(function, users)
+
+    findings = list(CloudSecurityAuditor().check_iam_mfa())
+
+    mock_executor.assert_called_once_with(max_workers=10)
+    assert len(findings) == 2
+
+
+@patch("cspm_auditor.ThreadPoolExecutor")
+@patch("boto3.client")
+def test_s3_public_access_uses_bounded_thread_pool(mock_boto_client, mock_executor):
+    """Usa diez workers para consultar el bloqueo de acceso de buckets."""
+    s3_client = mock_boto_client.return_value
+    s3_client.list_buckets.return_value = {
+        "Buckets": [{"Name": "bucket-1"}, {"Name": "bucket-2"}]
+    }
+    s3_client.get_public_access_block.return_value = {
+        "PublicAccessBlockConfiguration": {
+            "BlockPublicAcls": True,
+            "IgnorePublicAcls": True,
+            "BlockPublicPolicy": True,
+            "RestrictPublicBuckets": True,
+        }
+    }
+    executor = mock_executor.return_value.__enter__.return_value
+    executor.map.side_effect = lambda function, buckets: map(function, buckets)
+
+    assert list(CloudSecurityAuditor().check_public_s3_buckets()) == []
+
+    mock_executor.assert_called_once_with(max_workers=10)

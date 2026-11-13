@@ -4,16 +4,21 @@ import os
 from datetime import datetime
 from pathlib import Path
 from collections.abc import Mapping, Sequence
+import logging
 
 from fpdf import FPDF
 
 from azure_auditor import AzureSecurityAuditor
+from core.exceptions import AuthenticationError
+from core.logger import setup_logging
 from core.models import Finding
 from cspm_auditor import AWSSecurityAuditor
 
 
 SEVERITY_LEVELS = {"Crítico": 2, "Alto": 1, "Todos": 0}
+SEVERITY_RANK = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1, "INFO": 0}
 FINDING_FIELDS = ["Servicio", "Recurso", "Riesgo", "Descripción"]
+LOGGER = logging.getLogger(__name__)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -46,6 +51,23 @@ def build_parser() -> argparse.ArgumentParser:
         default=Path("."),
         help="Directorio de destino de los reportes (por defecto: .).",
     )
+    parser.add_argument(
+        "--fail-on-severity",
+        choices=("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"),
+        default=None,
+        help="Devuelve código 1 si aparece esta severidad o una superior.",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Valida credenciales sin auditar recursos ni generar reportes.",
+    )
+    parser.add_argument(
+        "--verbose",
+        "-v",
+        action="store_true",
+        help="Habilita logging detallado.",
+    )
     return parser
 
 
@@ -65,6 +87,40 @@ def collect_findings(provider: str) -> list[Finding]:
         findings.extend(AzureSecurityAuditor(storage_account_url).audit())
 
     return findings
+
+
+def validate_credentials(provider: str) -> None:
+    """Validate credentials for the selected providers without auditing."""
+    if provider in ("aws", "all"):
+        AWSSecurityAuditor().check_credentials()
+    if provider in ("azure", "all"):
+        storage_account_url = os.getenv("AZURE_STORAGE_ACCOUNT_URL")
+        if not storage_account_url:
+            raise ValueError(
+                "AZURE_STORAGE_ACCOUNT_URL es obligatorio para validar Azure."
+            )
+        AzureSecurityAuditor(storage_account_url).check_credentials()
+
+
+def has_severity_at_least(
+    findings: Sequence[Finding | Mapping[str, str]], threshold: str
+) -> bool:
+    """Return whether findings contain the requested severity threshold."""
+    threshold_level = SEVERITY_RANK[threshold]
+    for finding in findings:
+        if isinstance(finding, Finding):
+            severity = finding.severity.value
+        else:
+            severity = {
+                "Crítico": "CRITICAL",
+                "Alto": "HIGH",
+                "Medio": "MEDIUM",
+                "Bajo": "LOW",
+                "Info": "INFO",
+            }.get(finding.get("Riesgo", ""), "INFO")
+        if SEVERITY_RANK[severity] >= threshold_level:
+            return True
+    return False
 
 
 def filter_findings(
@@ -128,15 +184,28 @@ def _pdf_safe_text(value: str) -> str:
 def main(argv: Sequence[str] | None = None) -> int:
     """Punto de entrada de la CLI."""
     args = build_parser().parse_args(argv)
-    findings = filter_findings(
-        collect_findings(args.provider),
-        args.min_severity,
-    )
+    setup_logging(args.verbose)
+    try:
+        if args.dry_run:
+            validate_credentials(args.provider)
+            print("Credenciales válidas")
+            return 0
+
+        collected_findings = collect_findings(args.provider)
+        fail_on_severity = (
+            has_severity_at_least(collected_findings, args.fail_on_severity)
+            if args.fail_on_severity
+            else False
+        )
+        findings = filter_findings(collected_findings, args.min_severity)
+    except AuthenticationError as error:
+        LOGGER.error("%s", error)
+        return 2
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     if not findings:
         print("No se encontraron hallazgos para los filtros seleccionados.")
-        return 0
+        return 1 if fail_on_severity else 0
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     generated_reports: list[Path] = []
@@ -147,7 +216,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     for report in generated_reports:
         print(f"Reporte generado: {report}")
-    return 0
+    return 1 if fail_on_severity else 0
 
 
 if __name__ == "__main__":

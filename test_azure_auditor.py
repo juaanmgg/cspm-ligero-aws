@@ -1,4 +1,4 @@
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from azure_auditor import AzureSecurityAuditor
 
@@ -35,6 +35,8 @@ def test_check_public_storage_accounts_detects_public_container(
     mock_blob_service_client.assert_called_once_with(
         account_url="https://storage.blob.core.windows.net",
         credential="mock-credential",
+        connection_timeout=5,
+        read_timeout=10,
     )
     blob_service_client.get_container_client.assert_called_once_with(
         "public-container"
@@ -79,3 +81,26 @@ def test_audits_without_vulnerabilities_return_empty_findings(
     auditor = AzureSecurityAuditor("https://storage.blob.core.windows.net")
 
     assert list(auditor.audit()) == []
+
+
+@patch("azure_auditor.ThreadPoolExecutor")
+def test_container_inspection_uses_bounded_thread_pool(mock_executor):
+    """Usa diez workers para inspeccionar contenedores Blob."""
+    client = MagicMock()
+    client.get_service_properties.return_value = {
+        "allow_blob_public_access": False
+    }
+    client.list_containers.return_value = [{"name": "container-1"}]
+    client.get_container_client.return_value.get_container_properties.return_value = {
+        "public_access": None
+    }
+    executor = mock_executor.return_value.__enter__.return_value
+    executor.map.side_effect = lambda function, containers: map(function, containers)
+
+    auditor = AzureSecurityAuditor(
+        "https://storage.blob.core.windows.net",
+        blob_service_client=client,
+    )
+
+    assert list(auditor.audit()) == []
+    mock_executor.assert_called_once_with(max_workers=10)

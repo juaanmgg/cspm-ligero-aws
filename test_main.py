@@ -1,7 +1,10 @@
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
 import main
+from core.exceptions import AuthenticationError
+from core.models import CloudProvider, Finding, Severity
 
 
 def test_build_parser_uses_expected_defaults():
@@ -12,6 +15,9 @@ def test_build_parser_uses_expected_defaults():
     assert args.report_format == "both"
     assert args.min_severity == "Todos"
     assert args.output_dir == Path(".")
+    assert args.fail_on_severity is None
+    assert args.dry_run is False
+    assert args.verbose is False
 
 
 def test_main_provider_flag_selects_requested_provider():
@@ -107,3 +113,51 @@ def test_write_pdf_report_applies_severity_colors(tmp_path):
         ((253, 126, 20),),
         ((0, 0, 0),),
     ]
+
+
+def test_fail_on_severity_returns_one_when_threshold_is_reached(tmp_path):
+    """Falla el pipeline cuando aparece un finding de severidad crítica."""
+    finding = Finding(
+        id="finding-1",
+        provider=CloudProvider.AWS,
+        service="IAM",
+        resource="user",
+        severity=Severity.CRITICAL,
+        description="critical",
+        timestamp=datetime.now(),
+    )
+    with (
+        patch("main.collect_findings", return_value=[finding]),
+        patch("main.write_csv_report"),
+    ):
+        assert main.main(
+            [
+                "--format",
+                "csv",
+                "--fail-on-severity",
+                "HIGH",
+                "--output-dir",
+                str(tmp_path),
+            ]
+        ) == 1
+
+
+def test_dry_run_validates_credentials_without_auditing():
+    """El dry-run valida credenciales y no ejecuta auditorías de recursos."""
+    with (
+        patch("main.validate_credentials") as validate_credentials,
+        patch("main.collect_findings") as collect_findings,
+    ):
+        assert main.main(["--dry-run", "--verbose"]) == 0
+
+    validate_credentials.assert_called_once_with("aws")
+    collect_findings.assert_not_called()
+
+
+def test_authentication_error_returns_two():
+    """Los errores de autenticación detienen la CLI con código 2."""
+    with patch(
+        "main.collect_findings",
+        side_effect=AuthenticationError("credenciales inválidas"),
+    ):
+        assert main.main([]) == 2
