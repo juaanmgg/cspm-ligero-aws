@@ -1,8 +1,8 @@
 name: Weekly AWS Security Audit
 
 on:
-  schedule:
-    - cron: '0 8 * * 1' # Ejecuta todos los lunes a las 8:00 AM UTC
+  push:
+    branches: [ "main" ]
   workflow_dispatch: # Permite ejecutar el script manualmente desde la web
 
 jobs:
