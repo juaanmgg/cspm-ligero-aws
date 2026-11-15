@@ -9,8 +9,18 @@ from core.models import Finding, Severity
 
 from .base import BaseReporter
 
+# Rutas candidatas ordenadas por plataforma y distribución.
+# Windows primero, luego Linux/Debian, luego macOS.
+_WINDOWS_FONTS = Path(r"C:\Windows\Fonts")
 FONT_CANDIDATES = (
+    # Windows – fuentes comunes con soporte Unicode completo
+    _WINDOWS_FONTS / "seguiemj.ttf",
+    _WINDOWS_FONTS / "segoeui.ttf",
+    _WINDOWS_FONTS / "arial.ttf",
+    # Linux – DejaVu (disponible en la mayoría de distribuciones)
     Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+    Path("/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf"),
+    # macOS
     Path("/System/Library/Fonts/Supplemental/Arial Unicode.ttf"),
     Path("/Library/Fonts/Arial Unicode.ttf"),
 )

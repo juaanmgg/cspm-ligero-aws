@@ -105,7 +105,7 @@ class AzureSecurityAuditor(BaseAuditor):
             return None
         resource = f"{self.storage_account_url}/{container_name}"
         return self._finding(
-            f"container-{public_access}",
+            f"container-{public_access}-{container_name}",
             Severity.HIGH,
             resource,
             f"El contenedor permite acceso público anónimo ({public_access}).",

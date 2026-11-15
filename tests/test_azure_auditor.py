@@ -32,6 +32,7 @@ def test_check_public_storage_accounts_detects_public_container(
             "Descripción": "El contenedor permite acceso público anónimo (blob).",
         }
     ]
+    assert findings[0].id == "azure-container-blob-public-container"
     mock_blob_service_client.assert_called_once_with(
         account_url="https://storage.example.test",
         credential="mock-credential",

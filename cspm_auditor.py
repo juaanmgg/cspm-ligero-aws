@@ -72,7 +72,12 @@ class AWSSecurityAuditor(BaseAuditor):
         """Yield IAM users without an MFA device using concurrent checks."""
         LOGGER.info("Auditando usuarios IAM (MFA)...")
         try:
-            users = self.iam_client.list_users()["Users"]
+            paginator = self.iam_client.get_paginator("list_users")
+            users = [
+                user
+                for page in paginator.paginate()
+                for user in page["Users"]
+            ]
             with ThreadPoolExecutor(max_workers=10) as executor:
                 findings = executor.map(self._check_user_mfa, users)
                 for finding in findings:
@@ -103,38 +108,38 @@ class AWSSecurityAuditor(BaseAuditor):
         """Yield security groups exposing SSH to the internet."""
         LOGGER.info("Auditando Grupos de Seguridad (Puerto 22)...")
         try:
-            for security_group in self.ec2_client.describe_security_groups()[
-                "SecurityGroups"
-            ]:
-                for rule in security_group["IpPermissions"]:
-                    from_port = rule.get("FromPort")
-                    to_port = rule.get("ToPort")
-                    port_22_open = rule.get("IpProtocol") == "-1" or (
-                        isinstance(from_port, int)
-                        and isinstance(to_port, int)
-                        and from_port <= 22 <= to_port
-                    )
-                    if not port_22_open:
-                        continue
-                    exposed_to_ipv4 = any(
-                        ip_range.get("CidrIp") == "0.0.0.0/0"
-                        for ip_range in rule.get("IpRanges", [])
-                    )
-                    exposed_to_ipv6 = any(
-                        ip_range.get("CidrIpv6") == "::/0"
-                        for ip_range in rule.get("Ipv6Ranges", [])
-                    )
-                    if exposed_to_ipv4 or exposed_to_ipv6:
-                        group_id = security_group["GroupId"]
-                        yield self._finding(
-                            "open-ssh",
-                            group_id,
-                            Severity.CRITICAL,
-                            "EC2",
-                            f"Security Group: {security_group['GroupName']} ({group_id})",
-                            "El puerto 22 (SSH) está expuesto a todo Internet.",
-                            "Restringe el puerto 22 a redes de administración conocidas.",
+            paginator = self.ec2_client.get_paginator("describe_security_groups")
+            for page in paginator.paginate():
+                for security_group in page["SecurityGroups"]:
+                    for rule in security_group["IpPermissions"]:
+                        from_port = rule.get("FromPort")
+                        to_port = rule.get("ToPort")
+                        port_22_open = rule.get("IpProtocol") == "-1" or (
+                            isinstance(from_port, int)
+                            and isinstance(to_port, int)
+                            and from_port <= 22 <= to_port
                         )
+                        if not port_22_open:
+                            continue
+                        exposed_to_ipv4 = any(
+                            ip_range.get("CidrIp") == "0.0.0.0/0"
+                            for ip_range in rule.get("IpRanges", [])
+                        )
+                        exposed_to_ipv6 = any(
+                            ip_range.get("CidrIpv6") == "::/0"
+                            for ip_range in rule.get("Ipv6Ranges", [])
+                        )
+                        if exposed_to_ipv4 or exposed_to_ipv6:
+                            group_id = security_group["GroupId"]
+                            yield self._finding(
+                                "open-ssh",
+                                group_id,
+                                Severity.CRITICAL,
+                                "EC2",
+                                f"Security Group: {security_group['GroupName']} ({group_id})",
+                                "El puerto 22 (SSH) está expuesto a todo Internet.",
+                                "Restringe el puerto 22 a redes de administración conocidas.",
+                            )
         except NoCredentialsError as error:
             raise AuthenticationError(
                 "No se encontraron credenciales de AWS."

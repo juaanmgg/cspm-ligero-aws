@@ -1,4 +1,4 @@
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from botocore.exceptions import ClientError, NoCredentialsError
 import pytest
@@ -7,11 +7,35 @@ from cspm_auditor import AWS_CLIENT_CONFIG, CloudSecurityAuditor
 from core.exceptions import AuthenticationError
 
 
+# ---------------------------------------------------------------------------
+# Helpers para configurar paginadores falsos
+# ---------------------------------------------------------------------------
+
+def _iam_paginator(users: list) -> MagicMock:
+    """Devuelve un mock de paginador IAM list_users con una sola página."""
+    paginator = MagicMock()
+    paginator.paginate.return_value = [{"Users": users}]
+    return paginator
+
+
+def _ec2_paginator(security_groups: list) -> MagicMock:
+    """Devuelve un mock de paginador EC2 describe_security_groups con una sola página."""
+    paginator = MagicMock()
+    paginator.paginate.return_value = [{"SecurityGroups": security_groups}]
+    return paginator
+
+
+# ---------------------------------------------------------------------------
+# Tests IAM MFA
+# ---------------------------------------------------------------------------
+
 @patch("boto3.client")
 def test_check_iam_mfa_detects_missing_mfa(mock_boto_client):
     """Detecta y registra un usuario IAM que no tiene dispositivos MFA."""
     iam_client = mock_boto_client.return_value
-    iam_client.list_users.return_value = {"Users": [{"UserName": "usuario-sin-mfa"}]}
+    iam_client.get_paginator.return_value = _iam_paginator(
+        [{"UserName": "usuario-sin-mfa"}]
+    )
     iam_client.list_mfa_devices.return_value = {"MFADevices": []}
 
     auditor = CloudSecurityAuditor()
@@ -32,12 +56,16 @@ def test_check_iam_mfa_detects_missing_mfa(mock_boto_client):
     )
 
 
+# ---------------------------------------------------------------------------
+# Tests EC2 Security Groups
+# ---------------------------------------------------------------------------
+
 @patch("boto3.client")
 def test_check_open_ssh_detects_public_port_22(mock_boto_client):
     """Detecta un Security Group que expone el puerto SSH a Internet."""
     ec2_client = mock_boto_client.return_value
-    ec2_client.describe_security_groups.return_value = {
-        "SecurityGroups": [
+    ec2_client.get_paginator.return_value = _ec2_paginator(
+        [
             {
                 "GroupName": "grupo-publico",
                 "GroupId": "sg-0123456789abcdef0",
@@ -51,7 +79,7 @@ def test_check_open_ssh_detects_public_port_22(mock_boto_client):
                 ],
             }
         ]
-    }
+    )
 
     auditor = CloudSecurityAuditor()
     findings = list(auditor.check_open_ssh())
@@ -73,8 +101,8 @@ def test_check_open_ssh_detects_public_port_22(mock_boto_client):
 def test_check_open_ssh_detects_port_range(mock_boto_client):
     """Detecta SSH cuando el puerto está dentro de un rango permitido."""
     ec2_client = mock_boto_client.return_value
-    ec2_client.describe_security_groups.return_value = {
-        "SecurityGroups": [
+    ec2_client.get_paginator.return_value = _ec2_paginator(
+        [
             {
                 "GroupName": "grupo-rango",
                 "GroupId": "sg-range",
@@ -88,7 +116,7 @@ def test_check_open_ssh_detects_port_range(mock_boto_client):
                 ],
             }
         ]
-    }
+    )
 
     findings = list(CloudSecurityAuditor().check_open_ssh())
 
@@ -99,8 +127,8 @@ def test_check_open_ssh_detects_port_range(mock_boto_client):
 def test_check_open_ssh_detects_public_ipv6(mock_boto_client):
     """Detecta SSH expuesto mediante el rango IPv6 global."""
     ec2_client = mock_boto_client.return_value
-    ec2_client.describe_security_groups.return_value = {
-        "SecurityGroups": [
+    ec2_client.get_paginator.return_value = _ec2_paginator(
+        [
             {
                 "GroupName": "grupo-ipv6",
                 "GroupId": "sg-ipv6",
@@ -114,12 +142,16 @@ def test_check_open_ssh_detects_public_ipv6(mock_boto_client):
                 ],
             }
         ]
-    }
+    )
 
     findings = list(CloudSecurityAuditor().check_open_ssh())
 
     assert len(findings) == 1
 
+
+# ---------------------------------------------------------------------------
+# Tests S3
+# ---------------------------------------------------------------------------
 
 @patch("boto3.client")
 def test_check_public_s3_buckets_detects_unrestricted_bucket(mock_boto_client):
@@ -154,17 +186,26 @@ def test_check_public_s3_buckets_detects_unrestricted_bucket(mock_boto_client):
     )
 
 
+# ---------------------------------------------------------------------------
+# Tests de ausencia de hallazgos
+# ---------------------------------------------------------------------------
+
 @patch("boto3.client")
 def test_audits_without_vulnerabilities_return_empty_findings(mock_boto_client):
     """Devuelve una lista vacía cuando AWS no presenta configuraciones inseguras."""
     aws_client = mock_boto_client.return_value
-    aws_client.list_users.return_value = {"Users": []}
-    aws_client.describe_security_groups.return_value = {"SecurityGroups": []}
+    aws_client.get_paginator.side_effect = lambda op: (
+        _iam_paginator([]) if op == "list_users" else _ec2_paginator([])
+    )
     aws_client.list_buckets.return_value = {"Buckets": []}
 
     auditor = CloudSecurityAuditor()
     assert list(auditor.audit()) == []
 
+
+# ---------------------------------------------------------------------------
+# Tests de región configurable
+# ---------------------------------------------------------------------------
 
 @patch.dict("os.environ", {"AWS_DEFAULT_REGION": "eu-west-1"})
 @patch("boto3.client")
@@ -179,10 +220,14 @@ def test_cloud_security_auditor_uses_configured_aws_region(mock_boto_client):
     ]
 
 
+# ---------------------------------------------------------------------------
+# Tests de manejo de credenciales faltantes
+# ---------------------------------------------------------------------------
+
 @patch("boto3.client")
 def test_check_iam_mfa_handles_missing_aws_credentials(mock_boto_client):
     """Muestra el error de credenciales y no interrumpe la auditoría IAM."""
-    mock_boto_client.return_value.list_users.side_effect = NoCredentialsError()
+    mock_boto_client.return_value.get_paginator.side_effect = NoCredentialsError()
 
     auditor = CloudSecurityAuditor()
     with pytest.raises(AuthenticationError):
@@ -192,9 +237,7 @@ def test_check_iam_mfa_handles_missing_aws_credentials(mock_boto_client):
 @patch("boto3.client")
 def test_check_open_ssh_handles_missing_aws_credentials(mock_boto_client):
     """Muestra el error de credenciales y no interrumpe la auditoría EC2."""
-    mock_boto_client.return_value.describe_security_groups.side_effect = (
-        NoCredentialsError()
-    )
+    mock_boto_client.return_value.get_paginator.side_effect = NoCredentialsError()
 
     auditor = CloudSecurityAuditor()
     with pytest.raises(AuthenticationError):
@@ -211,14 +254,18 @@ def test_check_public_s3_buckets_handles_missing_aws_credentials(mock_boto_clien
         list(auditor.check_public_s3_buckets())
 
 
+# ---------------------------------------------------------------------------
+# Tests de concurrencia (ThreadPoolExecutor)
+# ---------------------------------------------------------------------------
+
 @patch("cspm_auditor.ThreadPoolExecutor")
 @patch("boto3.client")
 def test_iam_mfa_uses_bounded_thread_pool(mock_boto_client, mock_executor):
     """Usa diez workers para consultar MFA sin acumular dicts legacy."""
     iam_client = mock_boto_client.return_value
-    iam_client.list_users.return_value = {
-        "Users": [{"UserName": "user-1"}, {"UserName": "user-2"}]
-    }
+    iam_client.get_paginator.return_value = _iam_paginator(
+        [{"UserName": "user-1"}, {"UserName": "user-2"}]
+    )
     iam_client.list_mfa_devices.return_value = {"MFADevices": []}
     executor = mock_executor.return_value.__enter__.return_value
     executor.map.side_effect = lambda function, users: map(function, users)
@@ -251,3 +298,79 @@ def test_s3_public_access_uses_bounded_thread_pool(mock_boto_client, mock_execut
     assert list(CloudSecurityAuditor().check_public_s3_buckets()) == []
 
     mock_executor.assert_called_once_with(max_workers=10)
+
+
+# ---------------------------------------------------------------------------
+# Tests de paginación multi-página (IAM y EC2)
+# ---------------------------------------------------------------------------
+
+@patch("boto3.client")
+def test_check_iam_mfa_paginates_all_pages(mock_boto_client):
+    """Audita usuarios distribuidos en múltiples páginas del paginador IAM."""
+    iam_client = mock_boto_client.return_value
+    paginator = MagicMock()
+    paginator.paginate.return_value = [
+        {"Users": [{"UserName": "user-p1"}]},
+        {"Users": [{"UserName": "user-p2"}]},
+    ]
+    iam_client.get_paginator.return_value = paginator
+    iam_client.list_mfa_devices.return_value = {"MFADevices": []}
+
+    findings = list(CloudSecurityAuditor().check_iam_mfa())
+
+    assert len(findings) == 2
+    assert {f.resource for f in findings} == {
+        "Usuario IAM: user-p1",
+        "Usuario IAM: user-p2",
+    }
+
+
+@patch("boto3.client")
+def test_check_open_ssh_paginates_all_pages(mock_boto_client):
+    """Audita Security Groups distribuidos en múltiples páginas del paginador EC2."""
+    ec2_client = mock_boto_client.return_value
+    paginator = MagicMock()
+    paginator.paginate.return_value = [
+        {
+            "SecurityGroups": [
+                {
+                    "GroupName": "sg-page1",
+                    "GroupId": "sg-aaa",
+                    "IpPermissions": [
+                        {
+                            "FromPort": 22,
+                            "ToPort": 22,
+                            "IpProtocol": "tcp",
+                            "IpRanges": [{"CidrIp": "0.0.0.0/0"}],
+                        }
+                    ],
+                }
+            ]
+        },
+        {
+            "SecurityGroups": [
+                {
+                    "GroupName": "sg-page2",
+                    "GroupId": "sg-bbb",
+                    "IpPermissions": [
+                        {
+                            "FromPort": 22,
+                            "ToPort": 22,
+                            "IpProtocol": "tcp",
+                            "IpRanges": [{"CidrIp": "0.0.0.0/0"}],
+                        }
+                    ],
+                }
+            ]
+        },
+    ]
+    ec2_client.get_paginator.return_value = paginator
+
+    findings = list(CloudSecurityAuditor().check_open_ssh())
+
+    assert len(findings) == 2
+    assert {f.resource for f in findings} == {
+        "Security Group: sg-page1 (sg-aaa)",
+        "Security Group: sg-page2 (sg-bbb)",
+    }
+
